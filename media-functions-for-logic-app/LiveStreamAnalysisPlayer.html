@@ -4,21 +4,21 @@
 <head>
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <title>Azure Media Player</title>
+    <title>Live stream analysis using Video Indexer</title>
     <meta name="description" content="">
     <meta name="viewport" content="width=device-width, initial-scale=1">
 
     <link href="//amp.azure.net/libs/amp/latest/skins/amp-default/azuremediaplayer.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.1.2/css/bootstrap.min.css" integrity="sha384-Smlep5jCw/wG7hdkwQ/Z5nLIefveQRIY9nfy6xoR1uRYBtpZgI6339F5dgvm/e9B"
+    <link rel="stylesheet" href="//stackpath.bootstrapcdn.com/bootstrap/4.1.2/css/bootstrap.min.css" integrity="sha384-Smlep5jCw/wG7hdkwQ/Z5nLIefveQRIY9nfy6xoR1uRYBtpZgI6339F5dgvm/e9B"
         crossorigin="anonymous">
     <script src="//amp.azure.net/libs/amp/latest/azuremediaplayer.min.js"></script>
-    <script src="https://code.jquery.com/jquery-3.3.1.slim.min.js" integrity="sha384-q8i/X+965DzO0rT7abK41JStQIAqVgRVzpbzo5smXKp4YfRvH+8abtTE1Pi6jizo"
+    <script src="//code.jquery.com/jquery-3.3.1.slim.min.js" integrity="sha384-q8i/X+965DzO0rT7abK41JStQIAqVgRVzpbzo5smXKp4YfRvH+8abtTE1Pi6jizo"
         crossorigin="anonymous"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.3/umd/popper.min.js" integrity="sha384-ZMP7rVo3mIykV+2+9J3UJ46jBk0WLaUAdn689aCwoqbBJiSnjAK/l8WvCWPIPm49"
+    <script src="//cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.3/umd/popper.min.js" integrity="sha384-ZMP7rVo3mIykV+2+9J3UJ46jBk0WLaUAdn689aCwoqbBJiSnjAK/l8WvCWPIPm49"
         crossorigin="anonymous"></script>
-    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.1.2/js/bootstrap.min.js" integrity="sha384-o+RDsa0aLu++PJvFqy8fFScvbHFLtbvScb8AjopnFD+iEQ7wo/CG0xlczd+2O/em"
+    <script src="//stackpath.bootstrapcdn.com/bootstrap/4.1.2/js/bootstrap.min.js" integrity="sha384-o+RDsa0aLu++PJvFqy8fFScvbHFLtbvScb8AjopnFD+iEQ7wo/CG0xlczd+2O/em"
         crossorigin="anonymous"></script>
-    <script src="js/jspath.min.js"></script>
+    <!-- <script src="js/jspath.min.js"></script> -->
     <style>
         body {
             text-align: center;
@@ -37,7 +37,7 @@
 <body>
     <h1>Live stream analysis using Video Indexer</h1>
     <div class="content">
-        <video id="azuremediaplayer" class="azuremediaplayer amp-default-skin amp-big-play-centered" controls autoplay
+        <video id="azuremediaplayer" class="azuremediaplayer amp-default-skin amp-big-play-centered" controls autoplay data-setup='{ "logo": { "enabled": false } }'
             width="1024" height="576" poster="" data-setup='{}' tabindex="0">
             <source src="//hostname.streaming.media.azure.net/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000.ism/manifest"
                 type="application/vnd.ms-sstr+xml" />
@@ -66,6 +66,8 @@
         var analytics = {};
         var subtitle = "";
         var endSecond = 0;
+        var lastTotalSeconds = -1;
+        var loading = false;
 
         String.prototype.toDDHHMMSS = function () {
             var sec_num = parseInt(this, 10);
@@ -93,13 +95,29 @@
 
         var xhttp = new XMLHttpRequest();
         xhttp.onreadystatechange = function () {
+            loading = false;
+
+            console.log('Loading analytics operation finished. readyState: "' + this.readyState + '" - status: "' + this.status + '"');
+
             if (this.readyState == 4 && this.status == 200) {
                 analytics = JSON.parse(xhttp.responseText);
             };
         };
 
         function parseAnalytics() {
-            currentTotalSeconds = Math.floor(azuremediaplayer.player.currentMediaTime());
+            var currentTotalSeconds = Math.floor(azuremediaplayer.player.currentMediaTime());
+
+            if (currentTotalSeconds === lastTotalSeconds) {
+                return;
+            }
+
+            lastTotalSeconds = currentTotalSeconds;
+
+            if (!analytics.insights) {
+                loadAnalytics();
+                return;
+            }
+
             var accountId = analytics.insights[0].accountId;
             var videoId = analytics.insights[0].id;
 
@@ -139,7 +157,6 @@
                 var keywordsHTML = "";
                 for (let index = 0; index < keywordsArray.length; index++) {
                     keywordsHTML += `<span class="capsule">${keywordsArray[index]}</span>`;
-                    
                 }
                 keywordsContent.innerHTML =  keywordsHTML;
             }
@@ -160,7 +177,6 @@
                 var topicsHTML = "";
                 for (let index = 0; index < topicsArray.length; index++) {
                     topicsHTML += `<span class="capsule">${topicsArray[index]}</span>`;
-                    
                 }
                 topicsContent.innerHTML =  topicsHTML;
             }
@@ -219,11 +235,20 @@
             firstSecond = transcript[0].instances[0].adjustedStart.toSeconds()
             lastSecond = transcript[transcript.length - 1].instances[0].adjustedEnd.toSeconds();
 
-            if (currentTotalSeconds < firstSecond || currentTotalSeconds > lastSecond)
+            if (currentTotalSeconds < firstSecond || currentTotalSeconds > lastSecond) {
                 loadAnalytics();
+            }
         };
 
         function loadAnalytics() {
+            if (!!loading) {
+                console.log("Loading analytics operation already in progress.");
+                return;
+            }
+
+            loading = true;
+            console.log("Loading new analytics... ");
+
             currenttime = (azuremediaplayer.player.currentMediaTime()).toString().toDDHHMMSS();
             var url = functionquerycosmosdbinsights + currenttime;
             xhttp.open("GET", url, true);
@@ -232,32 +257,48 @@
 
         function initSubtitles() {
             azuremediaplayer.player.currentTime(azuremediaplayer.player.currentTime() - offset);
+
             loadAnalytics();
+
             setInterval(function () {
                 parseAnalytics();
             }, 500);
+
+            azuremediaplayer.player.play();
         };
 
-        (function (mediaPlayer) {
-            "use strict";
+        amp("azuremediaplayer").ready(function() {
+            console.log("Player 'ready'.");
 
-            mediaPlayer.plugin('contentTitle', function (options) {
-                var player = this;
-                var overlay = document.getElementById('overlay');
-                var overlayText = document.getElementById('overlayText');
-                var bOverlayHidden = "false";
-                var log = console.log.bind(console);
-                var p = player.mediaPlayer;
-                var res = player.videoWidth + " x " + player.videoHeight;
-                var widthHeight = player.options_.width + " x " + player.options_.height;
+            var myPlayer = this;
 
-                player.ready(function () {
-                    setTimeout(initSubtitles, 5000);
-                    log("player ready");
-                });
-
+            myPlayer.addEventListener(amp.eventName.loadeddata, function () {
+                console.log("Player 'loadeddata'.");
+                initSubtitles();
+                //setTimeout(initSubtitles, 2000);
             });
-        }(window.amp));
+        });
+
+        // (function (mediaPlayer) {
+        //     "use strict";
+
+        //     mediaPlayer.plugin('contentTitle', function (options) {
+        //         var player = this;
+        //         var overlay = document.getElementById('overlay');
+        //         var overlayText = document.getElementById('overlayText');
+        //         var bOverlayHidden = "false";
+        //         var log = console.log.bind(console);
+        //         var p = player.mediaPlayer;
+        //         var res = player.videoWidth + " x " + player.videoHeight;
+        //         var widthHeight = player.options_.width + " x " + player.options_.height;
+
+        //         player.ready(function () {
+        //             setTimeout(initSubtitles, 5000);
+        //             log("player ready");
+        //         });
+
+        //     });
+        // }(window.amp));
     </script>
 </body>
 
